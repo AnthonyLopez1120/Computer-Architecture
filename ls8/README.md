@@ -36,7 +36,7 @@ The binary numeric value on the left in the `print8.ls8` code above is either:
 or
 
 * one of the opcode's arguments (e.g. `00000000` for `R0` or `00001000` for the
-  value `8`), also known as the _operands_.
+  value `8`), also known as the _operands_
 
 This code above requires the implementation of three instructions:
 
