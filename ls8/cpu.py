@@ -2,14 +2,18 @@
 
 import sys
 
-HLT = 0b00000001
-LDI = 0b10000010
-PRN = 0b01000111
 ADD = 0b10100000
-MUL = 0b10100010
-PUSH = 0b01000101
-POP = 0b01000110
 CALL = 0b01010000
+CMP = 0b10100111
+HLT = 0b00000001
+JEQ = 0b01010101
+JMP = 0b01010100
+JNE = 0b01010110
+LDI = 0b10000010
+MUL = 0b10100010
+POP = 0b01000110
+PRN = 0b01000111
+PUSH = 0b01000101
 RET = 0b00010001
 
 class CPU:
@@ -20,18 +24,23 @@ class CPU:
         self.ram = [0] * 256
         self.reg = [0] * 8
         self.pc = 0
+        self.fl = 0b00000000
         self.halted = True
 
         self.branchtable = {}
-        self.branchtable[HLT] = self.handle_hlt
-        self.branchtable[LDI] = self.handle_ldi
-        self.branchtable[PRN] = self.handle_prn
         self.branchtable[ADD] = self.handle_add
-        self.branchtable[MUL] = self.handle_mul
-        self.branchtable[PUSH] = self.handle_push
-        self.branchtable[POP] = self.handle_pop
         self.branchtable[CALL] = self.handle_call
-        self.branchtable[RET] = self.handle_ret
+        self.branchtable[CMP] = self.handle_cmp
+        self.branchtable[HLT] = self.handle_hlt
+        self.branchtable[JEQ] = self.handle_jeq
+        self.branchtable[JMP] = self.handle_jmp
+        self.branchtable[JNE] = self.handle_jne
+        self.branchtable[LDI] = self.handle_ldi
+        self.branchtable[MUL] = self.handle_mul
+        self.branchtable[POP] = self.handle_pop
+        self.branchtable[PRN] = self.handle_prn
+        self.branchtable[PUSH] = self.handle_push
+        self.branchtable[RET] = self.handle_ret      
     
     def ram_read(self, address):
         if 0 <= address <= 255:
@@ -81,6 +90,8 @@ class CPU:
 
         else:
             raise Exception("Unsupported ALU operation")
+        
+        self.reg[reg_a] &= 255
 
     def trace(self):
         """
@@ -102,45 +113,87 @@ class CPU:
 
         print()
     
-    def handle_hlt(self, arg_a, arg_b):
+    def handle_add(self):
+        num_a = self.ram_read(self.pc + 1)
+        num_b = self.ram_read(self.pc + 2)
+        self.alu("ADD", num_a, num_b)
+        self.pc += 3
+    
+    def handle_call(self):
+        reg_num = self.ram_read(self.pc + 1)
+        self.reg[7] -= 1
+        self.ram_write(self.reg[7], self.pc + 2)
+        self.pc = self.reg[reg_num]
+
+    def handle_cmp(self):
+        reg_a = self.reg[self.ram_read(self.pc + 1)]
+        reg_b = self.reg[self.ram_read(self.pc + 2)]
+        if reg_a == reg_b:
+            self.fl = 0b00000001
+        elif reg_a < reg_b:
+            self.fl = 0b00000100
+        else:
+            self.fl = 0b00000010
+        self.pc += 3
+    
+    def handle_hlt(self):
         self.halted = True
     
-    def handle_ldi(self, arg_a, arg_b):
-        self.reg[arg_a] = arg_b
-        self.pc += 3
-
-    def handle_prn(self, arg_a, arg_b):
-        print(self.reg[arg_a])
-        self.pc += 2
-    
-    def handle_add(self, arg_a, arg_b):
-        self.alu("ADD", arg_a, arg_b)
-        self.pc += 3
-    
-    def handle_mul(self, arg_a, arg_b):
-        self.alu("MUL", arg_a, arg_b)
-        self.pc += 3
-
-    def handle_push(self, arg_a, arg_b):   
-        self.reg[7] -= 1
-        self.ram_write(self.reg[7], self.reg[arg_a])
+    def handle_int(self):
+        reg_num = self.ram_read(self.pc + 1)
         self.pc += 2
 
-    def handle_pop(self, arg_a, arg_b):
+
+    def handle_jeq(self):
+        if self.fl & 0b00000001 == 0b00000001:
+            self.handle_jmp()
+        else:
+            self.pc += 2
+    
+    def handle_jmp(self):
+        reg_num = self.ram_read(self.pc + 1)
+        self.pc = self.reg[reg_num]
+
+    def handle_jne(self):
+        if self.fl & 0b00000001 == 0b00000000:
+            self.handle_jmp()
+        else:
+            self.pc += 2
+    
+    def handle_ldi(self):
+        reg_num = self.ram_read(self.pc + 1)
+        value = self.ram_read(self.pc + 2)
+        self.reg[reg_num] = value
+        self.pc += 3
+    
+    def handle_mul(self):
+        num_a = self.ram_read(self.pc + 1)
+        num_b = self.ram_read(self.pc + 2)
+        self.alu("MUL", num_a, num_b)
+        self.pc += 3
+
+    def handle_pop(self):
         if self.reg[7] >= 244:
             print('Cannot pop, stack empty')
             self.halted = True
         else:
-            self.reg[arg_a] = self.ram_read(self.reg[7])
+            reg_num = self.ram_read(self.pc + 1)
+            self.reg[reg_num] = self.ram_read(self.reg[7])
             self.reg[7] += 1
             self.pc += 2
-    
-    def handle_call(self, arg_a, arg_b):
-        self.reg[7] -= 1
-        self.ram_write(self.reg[7], self.pc + 2)
-        self.pc = self.reg[arg_a]
 
-    def handle_ret(self, arg_a, arg_b):
+    def handle_prn(self):
+        reg_num = self.ram_read(self.pc + 1)
+        print(self.reg[reg_num])
+        self.pc += 2
+
+    def handle_push(self):
+        reg_num = self.ram_read(self.pc + 1)
+        self.reg[7] -= 1
+        self.ram_write(self.reg[7], self.reg[reg_num])
+        self.pc += 2
+
+    def handle_ret(self):
         self.pc = self.ram_read(self.reg[7])
         self.reg[7] += 1
 
@@ -151,11 +204,5 @@ class CPU:
 
         while not self.halted:
             ir = self.ram[self.pc]
-            arg_a = self.ram_read(self.pc + 1)
-            arg_b = self.ram_read(self.pc + 2)
-            try:
-                self.branchtable[ir](arg_a, arg_b)
-                self.trace()
-            except:
-                print(f'Error with instruction {ir} at address {self.pc}')
-                self.halted = True
+            self.branchtable[ir]()
+            # self.trace()
